@@ -14,14 +14,12 @@ class GridTestCamera:
         
         # Create camera node for OAK-D S-2 (modern API)
         cam_rgb = self.pipeline.create(dai.node.Camera)
+        cam_rgb.build(dai.CameraBoardSocket.CAM_A)  # Use build method with CAM_A
         
-        # Configure camera output
-        cap = dai.ImgFrameCapability()
-        cap.size.fixed((640, 480))
-        cap.fps.fixed(30)
-        
-        # Request output from camera
-        self.video_output = cam_rgb.requestOutput(cap, True)
+        # Create output stream using SPIOut (modern approach)
+        xout_video = self.pipeline.create(dai.node.SPIOut)
+        xout_video.setStreamName('video')
+        cam_rgb.raw.link(xout_video.input)
         
         print("OAK-D S-2 camera pipeline created successfully")
         return self.pipeline
