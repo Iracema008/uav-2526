@@ -103,13 +103,14 @@ def main():
             pipeline = dai.Pipeline()
             
             # Create camera node
-            cam_rgb = pipeline.create(dai.node.Camera)
-            cam_rgb.build(dai.CameraBoardSocket.CAM_A)
+            cam_rgb = pipeline.create(dai.node.ColorCamera)
+            cam_rgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
+            cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
             
-            # Create output using SPIOut (working approach)
-            xout_video = pipeline.create(dai.node.SPIOut)
+            # Create output using XLinkOut (working approach)
+            xout_video = pipeline.create(dai.node.XLinkOut)
             xout_video.setStreamName("video")
-            cam_rgb.raw.link(xout_video.input)
+            cam_rgb.video.link(xout_video.input)
             
             # Start pipeline
             device.startPipeline(pipeline)
