@@ -22,8 +22,8 @@ class GridTestCamera:
             cam_rgb = self.pipeline.create(dai.node.Camera)
             cam_rgb.build(dai.CameraBoardSocket.CAM_A)  # Use build method with CAM_A
             
-            # Create output stream using SPIOut (modern approach)
-            xout_video = self.pipeline.create(dai.node.SPIOut)
+            # Create output stream using XLinkOut (following official docs)
+            xout_video = self.pipeline.create(dai.node.XLinkOut)
             xout_video.setStreamName('video')
             cam_rgb.raw.link(xout_video.input)
             
@@ -116,9 +116,8 @@ class GridTestCamera:
             
             frame_count = 0
             
-            # Use DepthAI device with the pipeline (modern API)
-            with dai.Device() as device:
-                device.startPipeline(self.pipeline)
+            # Use DepthAI device with the pipeline (following official docs)
+            with dai.Device(self.pipeline) as device:
                 print("OAK-D S-2 device connected successfully!")
                 
                 # Get the video output from the camera
