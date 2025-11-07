@@ -8,6 +8,8 @@ import depthai as dai
 import numpy as np
 from datetime import timedelta
 import math
+import os
+import time
 
 def quaternion_to_euler(q_i, q_j, q_k, q_real):
     """Convert quaternion to Euler angles (roll, pitch, yaw)"""
@@ -248,6 +250,14 @@ def main():
     print()
     
     try:
+        # Fix Qt/Wayland issues on Raspberry Pi
+        if 'QT_QPA_PLATFORM' not in os.environ:
+            # Try xcb first (for X11), fall back to offscreen if no display
+            try:
+                os.environ['QT_QPA_PLATFORM'] = 'xcb'
+            except:
+                os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+        
         print("OAK-D S-2 Grid Test Camera started. Press 'q' to quit.")
         print("Mouse click to place crosshair for distance measurement.")
         print("Controls: 'c'=clear crosshair, 'r'=reset to center, 's'=save frame, 'd'=toggle depth, 'm'=toggle RGB/Mono, 'z'=reset yaw")
@@ -324,6 +334,9 @@ def main():
                 # Start pipeline
                 device.startPipeline(pipeline)
                 
+                # Small delay to let streams initialize (helps prevent XLink errors on Pi)
+                time.sleep(0.5)
+                
                 # Get output queues based on current configuration
                 sync_queue = None
                 video_queue = None
@@ -348,7 +361,12 @@ def main():
                 depth_queue = None
                 current_depth_frame = None
                 if depth_enabled:
-                    depth_queue = device.getOutputQueue(name="depth", maxSize=4, blocking=False)
+                    try:
+                        depth_queue = device.getOutputQueue(name="depth", maxSize=4, blocking=False)
+                    except Exception as e:
+                        print(f"Warning: Could not create depth queue: {e}")
+                        depth_queue = None
+                        depth_enabled = False  # Disable depth if queue creation fails
                 
                 # Define mouse callback here so it can access current_depth_frame
                 def mouse_callback(event, x, y, flags, param):
@@ -380,10 +398,24 @@ def main():
                 while True:
                     # Get depth frame (non-blocking) - only when enabled
                     if depth_enabled and depth_queue is not None:
-                        depth_packet = depth_queue.tryGet()
-                        if depth_packet is not None:
-                            depth_frame = depth_packet.getFrame()  # Depth values in millimeters
-                            current_depth_frame = depth_frame
+                        try:
+                            depth_packet = depth_queue.tryGet()
+                            if depth_packet is not None:
+                                depth_frame = depth_packet.getFrame()  # Depth values in millimeters
+                                current_depth_frame = depth_frame
+                        except Exception as e:
+                            # Handle XLink errors gracefully (e.g., during pipeline restart)
+                            error_str = str(e).lower()
+                            if "x_link_error" in error_str or "couldn't read data" in error_str:
+                                # Silently handle XLink errors during restart
+                                current_depth_frame = None
+                            else:
+                                print(f"Warning: Error reading depth frame: {e}")
+                            # If persistent errors, disable depth to prevent crashes
+                            if "x_link_error" in error_str:
+                                depth_queue = None
+                                depth_enabled = False
+                                print("Depth disabled due to communication error")
                     
                     # Get frame and IMU data (if available) - USE NON-BLOCKING
                     if use_imu:
@@ -615,11 +647,20 @@ def main():
                         # Toggle depth processing on/off - requires pipeline restart
                         depth_enabled = not depth_enabled
                         restart_pipeline = True
+                        # Clear depth queue to prevent XLink errors
+                        if depth_queue is not None:
+                            try:
+                                # Drain any remaining packets
+                                while depth_queue.tryGet() is not None:
+                                    pass
+                            except:
+                                pass
+                            depth_queue = None
+                        current_depth_frame = None  # Clear depth frame
                         if depth_enabled:
                             print("Depth measurement ENABLED - Restarting pipeline...")
                         else:
                             print("Depth measurement DISABLED - Restarting pipeline for better performance...")
-                            current_depth_frame = None  # Clear depth frame
                         break  # Exit inner loop to restart pipeline
                     elif key == ord('m'):
                         # Toggle RGB/Mono camera output - requires pipeline restart
