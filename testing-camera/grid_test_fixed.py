@@ -150,9 +150,11 @@ def create_pipeline(use_imu, imu_type, depth_enabled=True, use_rgb_output=False)
         stereo = pipeline.create(dai.node.StereoDepth)
         xoutDepth = pipeline.create(dai.node.XLinkOut)
         
-        # Configure stereo depth
-        stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
+        # Configure stereo depth - use DEFAULT for Pi5 compatibility
+        stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.DEFAULT)
         stereo.setLeftRightCheck(True)  # Better accuracy
+        # Reduce processing load on Pi5
+        stereo.setSubpixel(False)  # Disable subpixel for better performance
         if cam_rgb is not None:
             stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)  # Align depth to RGB camera
         else:
@@ -394,8 +396,13 @@ def main():
                 cv2.setMouseCallback('OAK-D S-2 Grid Test Camera', mouse_callback)
                 
                 restart_pipeline = False
+                consecutive_errors = 0
+                max_consecutive_errors = 10
                 
                 while True:
+                    # Small delay to reduce CPU load on Pi5
+                    time.sleep(0.01)  # 10ms delay
+                    
                     # Get depth frame (non-blocking) - only when enabled
                     if depth_enabled and depth_queue is not None:
                         try:
@@ -419,15 +426,38 @@ def main():
                     
                     # Get frame and IMU data (if available) - USE NON-BLOCKING
                     if use_imu:
-                        sync_data = sync_queue.tryGet()  # Changed from .get() to .tryGet() to prevent blocking
-                        if sync_data is None:
-                            # No sync data yet, skip this frame but continue processing
-                            # This prevents blocking when depth processing is busy
-                            continue
+                        try:
+                            sync_data = sync_queue.tryGet()
+                            if sync_data is None:
+                                # No sync data yet, skip this frame but continue processing
+                                # This prevents blocking when depth processing is busy
+                                continue
+                            
+                            video_msg = sync_data["video"]
+                            imu_msg = sync_data["imu"]
+                            frame = video_msg.getCvFrame()
+                        except Exception as e:
+                            # Handle XLink errors gracefully
+                            error_str = str(e).lower()
+                            if "x_link_error" in error_str or "couldn't read data" in error_str or "communication exception" in error_str:
+                                consecutive_errors += 1
+                                if consecutive_errors >= max_consecutive_errors:
+                                    print("Too many consecutive sync errors, restarting pipeline...")
+                                    restart_pipeline = True
+                                    break
+                                # Skip this frame and continue
+                                time.sleep(0.1)  # Wait a bit before retrying
+                                continue
+                            else:
+                                print(f"Warning: Error reading sync data: {e}")
+                                consecutive_errors += 1
+                                if consecutive_errors >= max_consecutive_errors:
+                                    restart_pipeline = True
+                                    break
+                                continue
                         
-                        video_msg = sync_data["video"]
-                        imu_msg = sync_data["imu"]
-                        frame = video_msg.getCvFrame()
+                        # Reset error counter on successful read
+                        consecutive_errors = 0
                         
                         # Convert mono to BGR for display if using mono cameras
                         if not use_rgb_output:
@@ -435,12 +465,16 @@ def main():
                             
                             # Show both mono cameras side-by-side
                             if monoRight_queue is not None:
-                                mono_right_packet = monoRight_queue.tryGet()
-                                if mono_right_packet is not None:
-                                    mono_right_frame = mono_right_packet.getCvFrame()
-                                    mono_right_frame = cv2.cvtColor(mono_right_frame, cv2.COLOR_GRAY2BGR)
-                                    # Combine frames side-by-side
-                                    frame = np.hstack([frame, mono_right_frame])
+                                try:
+                                    mono_right_packet = monoRight_queue.tryGet()
+                                    if mono_right_packet is not None:
+                                        mono_right_frame = mono_right_packet.getCvFrame()
+                                        mono_right_frame = cv2.cvtColor(mono_right_frame, cv2.COLOR_GRAY2BGR)
+                                        # Combine frames side-by-side
+                                        frame = np.hstack([frame, mono_right_frame])
+                                except Exception as e:
+                                    # Silently skip right camera if error occurs
+                                    pass
                         
                         # Get latest IMU data
                         rotation_angle = 0.0
@@ -549,29 +583,56 @@ def main():
                                 # Still initializing
                                 rotation_angle = 0.0
                     else:
-                        if use_rgb_output and video_queue is not None:
-                            in_video = video_queue.get()
-                            frame = in_video.getCvFrame()
-                        elif monoLeft_queue is not None:
-                            # Get mono left frame
-                            in_video = monoLeft_queue.tryGet()
-                            if in_video is not None:
+                        try:
+                            if use_rgb_output and video_queue is not None:
+                                in_video = video_queue.get()
                                 frame = in_video.getCvFrame()
-                                # Convert grayscale to BGR for display
-                                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-                                
-                                # Optionally show both mono cameras side-by-side
-                                if monoRight_queue is not None:
-                                    mono_right_packet = monoRight_queue.tryGet()
-                                    if mono_right_packet is not None:
-                                        mono_right_frame = mono_right_packet.getCvFrame()
-                                        mono_right_frame = cv2.cvtColor(mono_right_frame, cv2.COLOR_GRAY2BGR)
-                                        # Combine frames side-by-side
-                                        frame = np.hstack([frame, mono_right_frame])
+                            elif monoLeft_queue is not None:
+                                # Get mono left frame
+                                in_video = monoLeft_queue.tryGet()
+                                if in_video is not None:
+                                    frame = in_video.getCvFrame()
+                                    # Convert grayscale to BGR for display
+                                    frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+                                    
+                                    # Optionally show both mono cameras side-by-side
+                                    if monoRight_queue is not None:
+                                        try:
+                                            mono_right_packet = monoRight_queue.tryGet()
+                                            if mono_right_packet is not None:
+                                                mono_right_frame = mono_right_packet.getCvFrame()
+                                                mono_right_frame = cv2.cvtColor(mono_right_frame, cv2.COLOR_GRAY2BGR)
+                                                # Combine frames side-by-side
+                                                frame = np.hstack([frame, mono_right_frame])
+                                        except Exception as e:
+                                            # Silently skip right camera if error occurs
+                                            pass
+                                else:
+                                    continue
                             else:
                                 continue
-                        else:
-                            continue
+                        except Exception as e:
+                            # Handle XLink errors gracefully
+                            error_str = str(e).lower()
+                            if "x_link_error" in error_str or "couldn't read data" in error_str or "communication exception" in error_str:
+                                consecutive_errors += 1
+                                if consecutive_errors >= max_consecutive_errors:
+                                    print("Too many consecutive video errors, restarting pipeline...")
+                                    restart_pipeline = True
+                                    break
+                                # Skip this frame and continue
+                                time.sleep(0.1)  # Wait a bit before retrying
+                                continue
+                            else:
+                                print(f"Warning: Error reading video frame: {e}")
+                                consecutive_errors += 1
+                                if consecutive_errors >= max_consecutive_errors:
+                                    restart_pipeline = True
+                                    break
+                                continue
+                        
+                        # Reset error counter on successful read
+                        consecutive_errors = 0
                         rotation_angle = 0.0
                     
                     # Draw grid overlay with rotation
