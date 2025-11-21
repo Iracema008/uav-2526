@@ -10,6 +10,7 @@ from datetime import timedelta
 import math
 import os
 import time
+import apriltag
 
 def quaternion_to_euler(q_i, q_j, q_k, q_real):
     """Convert quaternion to Euler angles (roll, pitch, yaw)"""
@@ -306,6 +307,10 @@ def main():
         bias_calibration_samples = 100
         bias_calibrated = False
         zero_rate_threshold = 0.05
+
+        options = apriltag.DetectorOptions(families="tag36h11")  # only look for 36h11 family
+        detector = apriltag.Detector(options)
+        target_tag_id = 67
         
         # Main loop with pipeline restart capability
         # We need to reconnect device when restarting pipeline
@@ -651,6 +656,37 @@ def main():
                                     distance_at_click = depth_val
                         
                         frame = draw_crosshair(frame, cx, cy, grid_size, distance_at_click)
+
+                    # Convert frame to grayscale for AprilTag detection
+                    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+                    # Detect tags
+                    detections = detector.detect(gray_frame)
+
+                    for det in detections:
+                        if det.tag_id == target_tag_id:
+                            # Draw bounding box
+                            for i in range(4):
+                                pt1 = tuple(det.corners[i].astype(int))
+                                pt2 = tuple(det.corners[(i+1)%4].astype(int))
+                                cv2.line(frame, pt1, pt2, (0, 255, 0), 2)
+                            
+                            # Draw center
+                            c_x, c_y = int(det.center[0]), int(det.center[1])
+                            cv2.circle(frame, (c_x, c_y), 5, (0, 0, 255), -1)
+                            
+                            # Put tag ID
+                            cv2.putText(frame, f"Tag ID: {det.tag_id}", (c_x+10, c_y-10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
+                            # Optional: If depth is enabled, get depth at tag center
+                            if depth_enabled and current_depth_frame is not None:
+                                if 0 <= c_y < current_depth_frame.shape[0] and 0 <= c_x < current_depth_frame.shape[1]:
+                                    depth_val = current_depth_frame[c_y, c_x]
+                                    if depth_val > 0:
+                                        cv2.putText(frame, f"Distance: {depth_val/1000:.2f}m",
+                                                    (c_x+10, c_y+20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,255), 2)
+
                     
                     # Add frame counter and camera info
                     cv2.putText(frame, f"Frame: {frame_count}", (10, 30), 
