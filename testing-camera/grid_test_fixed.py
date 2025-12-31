@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Simplified OAK-D S-2 Grid Test Camera - No Class Encapsulation
 """
