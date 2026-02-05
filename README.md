@@ -7,6 +7,17 @@ Requirements
 - pip install depthai
 - pip install rich
 
+
+### Spectacular AI:
+
+Dependecies:
+1. sudo apt update
+2. sudo apt install python-is-python3 python3-pip git
+3. apt install ffmpeg
+
+Installation Command:
+    ` pip install spectacularAI[full] `
+
 ### Running the ArUco detections
 1. Ensure git lfs is installed and initialized:
 
