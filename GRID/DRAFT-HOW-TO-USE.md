@@ -1,7 +1,5 @@
 # GRID Module – Overview and Reference
 
-## 1. What We Built
-
 A small Python package for sharing traversability maps between devices over JSON. It models a 45×45 ft area, with each cell marked as either clear or obstacle.
 
 ---
@@ -14,7 +12,7 @@ GRID/
 ├── constants.py     # GRID_SIZE, TRAVERSABLE, OBSTACLE
 ├── grid.py          # TraversabilityGrid class
 ├── grid_data.json   # Sample / persisted grid data
-└── README.md        # This file
+└── DRAFT-HOW-TO-USE.md        # This file
 ```
 
 ---
