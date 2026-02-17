@@ -2,3 +2,7 @@ numpy
 opencv-contrib-python
 rich
 depthai
+apriltag
+depthai_sdk
+cv2
+pymavlink
