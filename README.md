@@ -64,3 +64,20 @@ If you run into this error:
    `echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | sudo tee /etc/udev/rules.d/80-movidius.rules`
 3.
    `sudo udevadm control --reload-rules && sudo udevadm trigger`
+
+
+### Running the Segmentation
+
+The UAV includes an automatic obstacle segmentation module that detects objects on a football field using OpenCV.
+
+The system treats:
+Green turf + white lines → safe
+Everything else → obstacle
+
+Segmentation runs automatically while the drone is flying.
+
+From root, start the UAV system. 
+While running, the terminal will print obstacle statistics:
+You can modify thresholds inside uav.segmenter.py
+
+
