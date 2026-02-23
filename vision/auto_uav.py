@@ -12,7 +12,7 @@ from common.utils.json_utils import read_json
 from common.utils.log import get_logger
 from common.video.camera_coordinate_transformer import CameraCoordinateTransformer
 from common.video.video_capture import VideoCapture
-
+from common.segmentation.uav_segmenter import FieldObstacleSegmenter, SegmenterConfig 
 
 logger = get_logger(__name__)
 saved_folder = "saved-aruco"
@@ -45,7 +45,14 @@ class AutoUav:
         self.use_depthai = getattr(conf, "use_depthai", False)
         self.correct_marker = False
         self.marker_detected_before = False
-
+        self.segmenter = FieldObstacleSegmenter(SegmenterConfig(
+            process_interval_sec=.5,
+            grid_h=40,
+            grid_w=40,
+            occ_thresh=0.03,
+        ))
+        self.latest_grid = None
+        
 
     def clean_up(self) -> None:
         """Cleanup for AutoUav."""
@@ -131,7 +138,18 @@ class AutoUav:
                 cv2.waitKey(1)
                 break
         
-            
+            # THIS IS THE OBSTACLE SEG SNAPSHOTS STILL FRAMES vvv
+            if self.segmenter.should_process_now():
+                obstacle_mask, grid = self.segmenter.process(frame)
+                self.latest_grid = grid
+                occupied = int(grid.sum())
+                total = grid.size
+                print(f"[SEG] occupied cells: {occupied}/{total}")
+                if self.conf.video.show_video:
+                    seg_overlay = self.segmenter.overlay(frame, obstacle_mask)
+                    cv2.imshow("Obstacle Segmentation", seg_overlay)
+            # ended
+
             corners, ids, _ = self.detector.detect(frame, True)
             self.check_ids(frame, ids)
 
