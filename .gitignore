@@ -1,0 +1,8 @@
+venv/
+.env/
+depthai_env/
+
+__pycache__/
+*.pyc
+
+.DS_Store
