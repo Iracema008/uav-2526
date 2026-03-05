@@ -5,6 +5,8 @@ import depthai as dai
 import os
 from types import SimpleNamespace
 
+from rich.markup import grid
+
 
 
 from vision.common.video.fps_counter import FPSTracker
@@ -14,7 +16,7 @@ from vision.common.utils.json_utils import read_json
 from vision.common.utils.log import get_logger
 from vision.common.video.camera_coordinate_transformer import CameraCoordinateTransformer
 from vision.common.video.video_capture import VideoCapture
-from common.segmentation.uav_segmenter import FieldObstacleSegmenter, SegmenterConfig 
+from vision.common.segmentation.uav_segmenter import FieldObstacleSegmenter, SegmenterConfig 
 
 #from pixhawk_testing import pixhawk_controller
 
@@ -56,6 +58,9 @@ class AutoUav:
             grid_w=40,
             occ_thresh=0.03,
         ))
+        self.segmenter = FieldObstacleSegmenter(
+            SegmenterConfig(process_interval_sec=0.5)
+)
         self.latest_grid = None
         
 
@@ -137,6 +142,20 @@ class AutoUav:
                 logger.warning("Recieved Empty Frame")
                 cv2.waitKey(1)
                 break
+
+            if self.segmenter.should_process_now():
+                obstacle_mask, grid = self.segmenter.process(frame)
+                self.latest_grid = grid
+
+                # Print number of occupied grid cells
+                occupied = int(grid.sum())
+                total = grid.size
+                print(f"[SEG] occupied cells: {occupied}/{total}")
+
+                # Optional visualization
+                if self.conf.video.show_video:
+                    seg_overlay = self.segmenter.overlay(frame, obstacle_mask)
+                    cv2.imshow("Obstacle Segmentation", seg_overlay)
             
             corners, ids, _ = self.detector.detect(frame, True)
             self.check_ids(frame, ids)
