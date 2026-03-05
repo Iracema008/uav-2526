@@ -119,3 +119,4 @@ class FieldObstacleSegmenter:
         red[:, :, 2] = 255
         m3 = cv2.cvtColor(obstacle_mask, cv2.COLOR_GRAY2BGR) if obstacle_mask.ndim == 2 else obstacle_mask
         return np.where(m3 > 0, (alpha * red + (1 - alpha) * overlay).astype(np.uint8), overlay)
+    

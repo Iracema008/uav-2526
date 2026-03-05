@@ -1,4 +1,0 @@
-numpy
-opencv-contrib-python
-rich
-depthai

@@ -1,17 +1,29 @@
-#import tensorflow as tf
-#import akida_model as akida
-import cv2
+"""Main program."""
 
-from vison.videoCapture import VideoCapture
-from vison.log import get_logger
-from vison.json_utils import read_json
+import cv2
+import depthai as dai
+import os
 from types import SimpleNamespace
-from ultralytics import YOLO
+
+
+
+from vision.common.video.fps_counter import FPSTracker
+from vision.common.detectors.detector import Detector
+from vision.common.detectors.detector_manager import DetectorManager
+from vision.common.utils.json_utils import read_json
+from vision.common.utils.log import get_logger
+from vision.common.video.camera_coordinate_transformer import CameraCoordinateTransformer
+from vision.common.video.video_capture import VideoCapture
+from common.segmentation.uav_segmenter import FieldObstacleSegmenter, SegmenterConfig 
+
+#from pixhawk_testing import pixhawk_controller
 
 
 logger = get_logger(__name__)
+saved_folder = "saved-aruco"
+target_IDs = [3, 7]
 
-class Uav:
+class AutoUav:
     """Main autonomous UAV class.
 
     Attr:
@@ -30,37 +42,102 @@ class Uav:
         """
         self.conf = conf
         self.video_capture: VideoCapture = VideoCapture(conf.video)
-        #self.camera_coordinate_transformer: CameraCoordinateTransformer = (
-        #    CameraCoordinateTransformer(conf.video)
-        #)
-        #self.detector: Detector = DetectorManager(conf.detector).get_detector()
-        #self.fps_tracker: FPSTracker = FPSTracker()
+        self.camera_coordinate_transformer: CameraCoordinateTransformer = (
+            CameraCoordinateTransformer(conf.video)
+        )
+        self.detector: Detector = DetectorManager(conf.detector).get_detector()
+        self.fps_tracker: FPSTracker = FPSTracker()
         self.use_depthai = getattr(conf, "use_depthai", False)
         self.correct_marker = False
         self.marker_detected_before = False
-
+        self.segmenter = FieldObstacleSegmenter(SegmenterConfig(
+            process_interval_sec=.5,
+            grid_h=40,
+            grid_w=40,
+            occ_thresh=0.03,
+        ))
+        self.latest_grid = None
+        
 
     def clean_up(self) -> None:
         """Cleanup for AutoUav."""
         logger.info("Cleaning up")
         self.video_capture.stop()
+        cv2.destroyAllWindows()
 
+    def flagged_marker(self, correct_marker)->None:
+       #eventually want to save image -- we want to save the greyscale image from the detector
+       cv2.imwrite("Snapshot", )
+       pass
+   
+
+    ######################################### -- We still need to write a time limit so it doesnt go infinite
+    #TODO: create a seperate function to flag correct marker, when detected enter our "centering pathing"
+    #WROTE THIS -- DIDNT TEST IT
+    # Keep it running 
     
-    '''
+    #this is handed found_ids, but could probably be rewritted for just ids
+    #need to reconfigure the variable handed here, right now a list of strings works
+    
+    def check_ids(self, frame, found_ids):
+        #Array for the global IDs, target_IDs = [3, 7]
+        # possibliy flatten the found ids bc opencv reads it as a 2d array
+        if found_ids is None:
+            return
+
+        #Correct Marker Flag throws true if any ids are equivalent to target_IDs
+        #loop that checks if anything in goal_ids is in target -- any(TRUE) flags true on any response
+        self.correct_marker = any(id_ in target_IDs for id_ in found_ids)
+
+        #return correct_marker
+        #If the marker is true, we save the datapack
+        if self.correct_marker and not self.marker_detected_before:
+            #Do we
+            print(f"Correct marker FOUND : {self.correct_marker}")
+            self.datapack_save(frame, found_ids)
+            self.marker_detected_before = True
+            
+        return found_ids
+
+    def datapack_save(self, frame, FLIGHTDATA):
+        #maybe put the timer here?
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        cv2.imwrite("pack_image.png", gray)
+
+        if not os.path.exists(saved_folder):
+            print("Fix the folder path")
+
+        file_save = os.path.join(saved_folder, "pack_image.png")
+        cv2.imwrite(file_save, gray)
+        print(f" Saved image to: {file_save}")
+
+
+        #this will write data to a .txt -- Are Global Variable easier?
+        #with open("datapack.txt", 'w') as file:
+           #if it is a list, print it like one Otherwise just write it
+            #if isinstance(FLIGHTDATA, list):
+            #    file.writelines([str(line) + "\n" for line in FLIGHTDATA])
+            
+            #else:
+            #    file.write(str(FLIGHTDATA))
+
+
+
     def run(self) -> None:
         """Runs the main logic."""
         logger.info("AutoUav starting up...")
         self.video_capture.start()
+    
 
         while True:
-            # get frame from the video capture
+            # get frame from the video capture 
             frame = self.video_capture._capture_frames()
-            #changed from read() to capture_frames()
 
             if frame is None:
                 logger.warning("Recieved Empty Frame")
                 cv2.waitKey(1)
-
+                break
+            
             corners, ids, _ = self.detector.detect(frame, True)
             self.check_ids(frame, ids)
 
@@ -155,9 +232,14 @@ class Uav:
 
 
 
-    '''
+
 if __name__ == "__main__":
     config: SimpleNamespace = read_json("config.json")
 
-    auto_uav = Uav(config)
-    auto_uav.run()
+    auto_uav = AutoUav(config)
+    try:
+        auto_uav.run()
+    except KeyboardInterrupt:
+        logger.info("Keyboard Interrupt")
+    finally:
+        auto_uav.clean_up()

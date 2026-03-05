@@ -1,15 +1,19 @@
 #!/bin/bash
 
+# updated
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="$PROJECT_ROOT/depthai_env"
+MAIN_SCRIPT="$PROJECT_ROOT/auto_uav.py"
+
 # Function to create a virtual environment if it doesn't exist
 create_venv_if_not_exists() {
-    local VENV_DIR=".venv"
 
     # Check if the virtual environment directory exists
     if [ ! -d "$VENV_DIR" ]; then
         echo "Virtual environment not found. Creating a new one..."
         
-        # Create the virtual environment
-        python3 -m venv "$VENV_DIR"
+        # updated: create isolated venv to avoid PEP 668
+        python3 -m venv --copies "$VENV_DIR"
         
         if [ $? -ne 0 ]; then
             echo "Error: Failed to create virtual environment."
@@ -24,17 +28,17 @@ create_venv_if_not_exists() {
 
 # Function to install dependencies from requirements.txt
 install_requirements() {
-    local VENV_DIR=".venv"
 
     # Activate the virtual environment
     source "$VENV_DIR/bin/activate"
     
     # Check if requirements.txt exists
-    if [ -f "requirements.txt" ]; then
+    if [ -f "$PROJECT_ROOT/requirements.txt" ]; then
         echo "Installing dependencies from requirements.txt..."
         
-        # Install dependencies
-        pip install -r requirements.txt
+        # updated: upgrade pip and install packages safely
+        pip install --upgrade pip
+        pip install -r "$PROJECT_ROOT/requirements.txt"
         
         if [ $? -ne 0 ]; then
             echo "Error: Failed to install dependencies."
@@ -53,10 +57,9 @@ install_requirements() {
 
 # Function to initialize the virtual environment
 init_venv() {
-    local VENV_DIR=$1
 
     # Create the virtual environment if it doesn't exist
-    create_venv_if_not_exists "$VENV_DIR"
+    create_venv_if_not_exists
     
     if [ $? -ne 0 ]; then
         echo "Failed to create virtual environment. Exiting."
@@ -64,7 +67,7 @@ init_venv() {
     fi
 
     # Install the requirements in the virtual environment
-    install_requirements "$VENV_DIR"
+    install_requirements
     
     if [ $? -ne 0 ]; then
         echo "Failed to install dependencies. Exiting."
@@ -72,14 +75,12 @@ init_venv() {
     fi
 }
 
-# Function to run the auto_uav.py script inside the virtual environment
+# Function to run the main.py script inside the virtual environment
 run() {
-    local VENV_DIR=".venv"
-    local SCRIPT="auto_uav.py"
 
     export PYTHONDONTWRITEBYTECODE=1
 
-    init_venv $VENV_DIR
+    init_venv
 
     # Check if the virtual environment exists
     if [ ! -d "$VENV_DIR" ]; then
@@ -87,22 +88,21 @@ run() {
         return 1
     fi
 
-    # Check if auto_uav.py exists
-    if [ ! -f "$SCRIPT" ]; then
-        echo "Error: $SCRIPT not found."
+    # Check if main.py exists
+    if [ ! -f "$MAIN_SCRIPT" ]; then
+        echo "Error: main.py not found."
         return 1
     fi
 
     # Activate the virtual environment
     source "$VENV_DIR/bin/activate"
 
-    # Fix depthai path
-    export PYTHONPATH="$(pwd)/../depthai:$PYTHONPATH"
-
+    # updated: set PYTHONPATH for project folders
+    export PYTHONPATH="$PROJECT_ROOT:$PROJECT_ROOT/pixhawk_testing:$PROJECT_ROOT/vision:$PYTHONPATH"
     
-    # Run the auto_uav.py script
-    echo "Running $SCRIPT inside virtual environment..."
-    python -u "$SCRIPT"
+    # Run the main.py script
+    echo "Running main.py inside virtual environment..."
+    python -u "$MAIN_SCRIPT"
     
     # Capture the exit code of the script
     local EXIT_CODE=$?
@@ -116,10 +116,10 @@ run() {
 
 # Usage message to show how to use the functions
 usage() {
-    echo "Usage: source setup_venv.sh"
+    echo "Usage: source helper.sh"
     echo "Then call the following functions:"
     echo " - init_venv           : Create/activate venv and install requirements."
-    echo " - run                : Run auto_uav.py inside the virtual environment."
+    echo " - run                 : Run main.py inside the virtual environment."
 }
 
 # If the script is executed directly, show usage instructions
