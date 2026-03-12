@@ -69,4 +69,4 @@ with dai.Device(pipeline) as device:
             controller.land_and_disarm(body_z)
             break
         # Not close enough, keep sending velocity commands to move towards the tag
-        controller.send_velocity(body_x, body_y, body_z)
+        controller.adjust_velocity_and_send(body_x, body_y, body_z)
